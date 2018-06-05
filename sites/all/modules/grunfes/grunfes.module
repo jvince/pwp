@@ -29,7 +29,7 @@ function grunfes_form_pool_node_form_alter(&$form, &$form_state, $form_id) {
   ) {
     $options = array_keys($form['field_matches_to_pick']['und']['#options']);
     $form['field_matches_to_pick']['und']['#default_value'] = $options;
-    $form['field_matches_to_pick']['und']['#attributes'] = array('checked' => 'checked');
+    $form['field_matches_to_pick']['und']['#attributes'] = ['checked' => 'checked'];
   };
 }
 
@@ -205,8 +205,6 @@ function grunfes_publish_pick($pool_id) {
 
     $score_entity = entity_metadata_wrapper('leaderboard_score', $score);
 
-    $d = _wrapper_debug($score_entity);
-
     $score_entity->field_user = $pool_user->uid;
     $score_entity->field_score = $user_points;
     $score_entity->field_pool_id = $pool_id;
@@ -281,9 +279,9 @@ function grunfes_reset_pool($admin_picks, $user_picks) {
     $all_hits = FALSE;
     $points = 0;
     break;
-    }
+  }
 
-    
+
   return $points;
 }
 
@@ -305,7 +303,7 @@ function grunfes_fetch_pick($user_id, $pool_id, $match_id) {
 
 function grunfes_render_matches($pool_id, $fields) {
   global $user;
-  
+
   $team_keys = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j'];
   $html = '';
 
@@ -414,22 +412,24 @@ function grunfes_entity_presave($entity, $type) {
     $node_wrapper = entity_metadata_wrapper('node', $entity);
     $matches = [];
 
-    foreach($node_wrapper->field_matches_to_pick->getIterator() as $show) {
-      foreach ($show->field_matches->getIterator() as $match) {
-        $matches[] = array(
-          'target_id' => $match->nid->value(),
-        );
+    // Check if pool change is triggered from form.
+    if (isset($_POST['form_id']) && $_POST['form_id'] === 'pool_node_form') {
+      foreach ($node_wrapper->field_matches_to_pick->getIterator() as $show) {
+        foreach ($show->field_matches->getIterator() as $match) {
+          $matches[] = [
+            'target_id' => $match->nid->value(),
+          ];
+        }
       }
+      $entity->field_matches_to_pick['und'] = $matches;
     }
-    $entity->field_matches_to_pick['und'] = $matches;
-    dsm($entity);
   }
 }
 
-// function _wrapper_debug($w) {
-//   $values = [];
-//   foreach ($w->getPropertyInfo() as $key => $val) {
-//     $values[$key] = $w->$key->value();
-//   }
-//   return $values;
-// }
+function grunfes_wrapper_debug($w) {
+  $values = [];
+  foreach ($w->getPropertyInfo() as $key => $val) {
+    $values[$key] = $w->$key->value();
+  }
+  return $values;
+}
