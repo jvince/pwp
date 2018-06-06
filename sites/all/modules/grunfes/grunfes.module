@@ -1,5 +1,13 @@
 <?php
 
+const GRUNFES_PICK_LOCK_UP_5 = '5minutes';
+const GRUNFES_PICK_LOCK_UP_NIGHTBEFORE = '1159nightbefore';
+
+const GRUNFES_PICK_LOCK_UP = [
+  GRUNFES_PICK_LOCK_UP_5 => '-5 minutes',
+  GRUNFES_PICK_LOCK_UP_NIGHTBEFORE => '-1 day'
+];
+
 function grunfes_menu() {
   $items = [];
 
@@ -103,6 +111,15 @@ function grunfes_pick_pool($pool_id) {
     drupal_goto('/');
   }
 
+  $pool_node = node_load($pool_id);
+  $user_entity = entity_metadata_wrapper('user', $user);
+  $pool_locked = boolval($pool_node->field_closed['und'][0]['value']);
+
+  if ($pool_locked) {
+    drupal_set_message('Pool closed. Unable to save picks.');
+    drupal_goto($_POST['redirectUrl']);
+  }
+
   $results = grunfes_get_user_picks_by_pool($user->uid, $pool_id);
   $is_new_pick = count($results) === 0;
 
@@ -113,9 +130,6 @@ function grunfes_pick_pool($pool_id) {
     );
     drupal_goto($_POST['redirectUrl']);
   }
-
-  $user_entity = entity_metadata_wrapper('user', $user);
-  $pool_node = node_load($pool_id);
 
   $count = 0;
 
@@ -304,17 +318,34 @@ function grunfes_fetch_pick($user_id, $pool_id, $match_id) {
 function grunfes_render_matches($pool_id, $fields) {
   global $user;
 
+  $pool = node_load($pool_id);
+  $pool_locked = boolval($pool->field_closed['und'][0]['value']);
+  $pick_lock_up = $pool->field_pick_lockup['und'][0]['value'];
+
   $team_keys = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j'];
   $html = '';
+  $date_expired = TRUE;
 
   $match_id = $fields['field_team_a']->raw;
   $results = grunfes_fetch_pick($user->uid, $pool_id, $match_id);
 
-  $match_entity = entity_metadata_wrapper('node', $match_id);
-  $match_timestamp = intval($match_entity->field_start_date->value());
-  $match_close_timestamp = $match_timestamp - 60 * 60 * 2;
-  $now = new DateObject();
-  $date_expired = $now->getTimestamp() >= $match_close_timestamp;
+  if (!$pool_locked) {
+    $match_entity = entity_metadata_wrapper('node', $match_id);
+    $match_timestamp = intval($match_entity->field_start_date->value());
+
+    $now = new DateObject('now');
+    $match_date = new DateObject();
+    $match_date->setTimestamp($match_timestamp);
+    $match_date->add(
+      DateInterval::createFromDateString(
+        GRUNFES_PICK_LOCK_UP[$pick_lock_up]));
+
+    if ($pick_lock_up === GRUNFES_PICK_LOCK_UP_NIGHTBEFORE) {
+      $match_date->setTime('23', '59');
+    }
+
+    $date_expired = $now->getTimestamp() >= $match_date->getTimestamp();
+  }
 
   if ($date_expired) {
     $_SESSION['show_expired'] = TRUE;
