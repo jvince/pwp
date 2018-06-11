@@ -5,7 +5,7 @@ const GRUNFES_PICK_LOCK_UP_NIGHTBEFORE = '1159nightbefore';
 
 const GRUNFES_PICK_LOCK_UP = [
   GRUNFES_PICK_LOCK_UP_5 => '-5 minutes',
-  GRUNFES_PICK_LOCK_UP_NIGHTBEFORE => '-1 day'
+  GRUNFES_PICK_LOCK_UP_NIGHTBEFORE => '-1 day',
 ];
 
 function grunfes_menu() {
@@ -27,7 +27,97 @@ function grunfes_menu() {
     'type' => MENU_CALLBACK,
   ];
 
+  $items['node/%/reset'] = [
+    'title' => t('Reset pool'),
+    'page callback' => 'drupal_get_form',
+    'page arguments' => ['grunfes_reset_pool_form', 2],
+    'access callback' => 'grunfes_reset_pool_access',
+    'access arguments' => ['node', 1],
+    'type' => MENU_LOCAL_TASK,
+  ];
+
   return $items;
+}
+
+function grunfes_reset_pool_form(&$form, $form_state, $gid) {
+  $form['reset_pool_information'] = [
+    '#markup' => '<p>Are you sure?</p>',
+  ];
+
+  $form['reset_pool_yes'] = [
+    '#type' => 'submit',
+    '#value' => t('Yes'),
+    '#submit' => ['grunfes_reset_pool_submit'],
+  ];
+
+  $form['reset_pool_gid'] = [
+    '#type' => 'hidden',
+    '#value' => $gid,
+  ];
+
+  return $form;
+}
+
+function grunfes_reset_pool_submit(&$form, $form_state) {
+  $gid = $form_state['values']['reset_pool_gid'];
+  $group = entity_load_single('node', $gid);
+  $group_entity = entity_metadata_wrapper('node', $group);
+
+  if ($group) {
+    $group_entity->field_closed->set(FALSE);
+    $group_entity->field_matches_to_pick->set([]);
+    $group_entity->save();
+
+    /*
+     * Delete user scores.
+     */
+
+    /** @var \DatabaseStatementBase $query */
+    $query = db_select('field_data_field_pool_id', 'pool')
+      ->fields('pool', ['entity_id'])
+      ->condition('field_pool_id_value', $gid)
+      ->condition('entity_type', 'leaderboard_score')
+      ->execute();
+
+    $result = array_values($query->fetchCol(0));
+    entity_delete_multiple('leaderboard_score', $result);
+
+    /**
+     * Delete user picks
+     */
+    $query = db_select('field_data_field_pool_id', 'pool')
+      ->fields('node', ['nid'])
+      ->condition('field_pool_id_value', $gid)
+      ->condition('bundle', 'user_pick');
+
+    $query->innerJoin('node', 'node', 'pool.entity_id = node.nid');
+    $result = array_values($query->execute()->fetchCol(0));
+    entity_delete_multiple('node', $result);
+  }
+
+  drupal_goto(
+    drupal_get_path_alias("node/{$gid}")
+  );
+}
+
+function grunfes_reset_pool_access($group_type, $gid) {
+  $group = entity_load_single($group_type, $gid);
+  if (!$group || !og_is_group($group_type, $gid)) {
+    return FALSE;
+  }
+
+  //  $group_closed = boolval($group->field_closed['und'][0]['value']);
+  //  if (!$group_closed) {
+  //    return FALSE;
+  //  }
+
+  global $user;
+
+  if (!is_user_administrator() && $group->uid !== $user->uid) {
+    return FALSE;
+  }
+
+  return TRUE;
 }
 
 function grunfes_form_pool_node_form_alter(&$form, &$form_state, $form_id) {
@@ -153,7 +243,8 @@ function grunfes_pick_pool($pool_id) {
       $pick_entity->field_team_picked = $value;
       $pick_entity->save();
 
-      $user_entity->field_picks[] = $pick_entity->nid->value();
+      // Do we need this?
+      // $user_entity->field_picks[] = $pick_entity->nid->value();
     }
     else {
       $pick = node_load($results[$count]);
@@ -278,26 +369,26 @@ function grunfes_calculate_pick_points($admin_picks, $user_picks) {
   return $points;
 }
 
-function grunfes_reset_pool($admin_picks, $user_picks) {
-  if (count($user_picks) === 0) {
-    return 0;
-  }
-
-  $points = 0;
-  $all_hits = TRUE;
-
-  foreach ($admin_picks as $index => $value) {
-    $admin_pick = node_load($value);
-    $user_pick = node_load($user_picks[$index]);
-
-    $all_hits = FALSE;
-    $points = 0;
-    break;
-  }
-
-
-  return $points;
-}
+//function grunfes_reset_pool($admin_picks, $user_picks) {
+//  if (count($user_picks) === 0) {
+//    return 0;
+//  }
+//
+//  $points = 0;
+//  $all_hits = TRUE;
+//
+//  foreach ($admin_picks as $index => $value) {
+//    $admin_pick = node_load($value);
+//    $user_pick = node_load($user_picks[$index]);
+//
+//    $all_hits = FALSE;
+//    $points = 0;
+//    break;
+//  }
+//
+//
+//  return $points;
+//}
 
 function grunfes_fetch_pick($user_id, $pool_id, $match_id) {
   $query = db_select('node', 'n')
