@@ -20,8 +20,7 @@ function grunfes_menu() {
 
   $items['publish_picks'] = [
     'title' => t('Publish picks'),
-    'page arguments',
-    [1],
+    'page arguments' => [1],
     'page callback' => 'grunfes_publish_pick',
     'access arguments' => ['access content'],
     'type' => MENU_CALLBACK,
@@ -30,7 +29,7 @@ function grunfes_menu() {
   $items['node/%/reset'] = [
     'title' => t('Reset pool'),
     'page callback' => 'drupal_get_form',
-    'page arguments' => ['grunfes_reset_pool_form', 2],
+    'page arguments' => ['grunfes_reset_pool_form', 1],
     'access callback' => 'grunfes_reset_pool_access',
     'access arguments' => ['node', 1],
     'type' => MENU_LOCAL_TASK,
