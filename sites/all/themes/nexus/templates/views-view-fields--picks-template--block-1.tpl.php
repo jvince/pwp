@@ -34,9 +34,12 @@ $group_id = $row->_field_data['node_field_data_field_matches_to_pick_nid']['enti
 <h3 class="left w100"><?php print $fields['title']->content;?></h3>
 <div class="left clearfix w100"><label>Start date: </label><?php print $fields['field_start_date']->content;?></div>
 <div class="left clearfix w100"><label>Points to earn: </label><?php print $fields['field_point_to_earn']->content;?></div>
-<div class="left clearfix w100"><label>No Contest: </label><?php print $fields['field_no_contest']->content;?></div>
+
 <div class="match clearfix w100 m5-0">
     <?php
         print grunfes_render_matches($pool_id, $fields);
     ?>
 </div>
+
+<div class="left clearfix w100"><label></label><?php print $fields['views_conditional']->content;?></div>
+<div class="left clearfix w100"><a href="/editors-picks">Editor's Picks</a></div>
