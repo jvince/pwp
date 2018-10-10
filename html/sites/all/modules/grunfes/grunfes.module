@@ -976,59 +976,120 @@ function grunfes_mitb_compare_picks($pick1, $pick2) {
  * @return bool
  */
 function grunfes_check_mitb($pool_id, &$out) {
-  $query = db_select('node', 'n')
-    ->condition('n.type', 'pool')
-    ->condition('n.nid', $pool_id);
-  $query->addField('m', 'entity_id');
-  $query->innerJoin('field_data_field_matches_to_pick', 'mtp', 'n.nid = mtp.entity_id');
-  $query->innerJoin('field_data_field_matches', 'm', 'm.field_matches_target_id = mtp.field_matches_to_pick_target_id');
-  $show_id = $query->execute()->fetchField(0);
+  $show_id = grunfes_get_show_from_pool($pool_id);
 
-  if (empty($show_id)) {
+  if ($show_id === NULL) {
     return FALSE;
   }
 
   $show = entity_load('node', array($show_id));
+  $mitb_mens_field = $show[$show_id]->field_mitb_mens;
+  $mitb_womens_field = $show[$show_id]->field_mitb_womens;
+
+  $mitb_mens_value = empty($mitb_mens_field)
+    ? FALSE
+    : boolval($mitb_mens_field['und'][0]['value']);
+
+  $mitb_womens_value = empty($mitb_womens_field)
+    ? FALSE
+    : boolval($mitb_womens_field['und'][0]['value']);
+
   $out = array(
-    'mitb_mens' => boolval($show[$show_id]->field_mitb_mens['und'][0]['value']),
-    'mitb_womens' => boolval($show[$show_id]->field_mitb_womens['und'][0]['value']),
+    'mitb_mens' => $mitb_mens_value,
+    'mitb_womens' => $mitb_womens_value,
   );
 
   return $out['mitb_mens'] || $out['mitb_womens'];
 }
 
 /**
+ * Returns first show which belongs to the given pool.
+ *
+ * @param $pool_id
+ *
+ * @return string|null
+ */
+function grunfes_get_show_from_pool($pool_id) {
+  $show = NULL;
+  $pool = node_load($pool_id);
+
+  if ($pool !== NULL && isset($pool->field_matches_to_pick['und'][0]['target_id'])) {
+      $match_id = $pool->field_matches_to_pick['und'][0]['target_id'];
+
+    $query = new EntityFieldQuery();
+    $query
+      ->entityCondition('entity_type', 'node')
+      ->entityCondition('bundle', 'show')
+      ->propertyCondition('status', NODE_PUBLISHED)
+      ->fieldCondition('field_matches', 'target_id', $match_id);
+    $result = $query->execute();
+
+    if (isset($result['node']) && !empty($result['node'])) {
+      $shows = array_keys($result['node']);
+      $show = array_shift($shows);
+    }
+  }
+
+  return $show;
+}
+
+/**
+ * Returns pools containg show with a given match.
+ *
+ * @param $match_id
+ *
+ * @return array
+ */
+function grunfes_get_pools_from_match($match_id) {
+  $pools = [];
+
+  $query = new EntityFieldQuery();
+  $query
+    ->entityCondition('entity_type', 'node')
+    ->entityCondition('bundle', 'pool')
+    ->propertyCondition('status', NODE_PUBLISHED)
+    ->fieldCondition('field_matches_to_pick', 'target_id', $match_id);
+  $result = $query->execute();
+
+  if (isset($result['node']) && !empty($result['node'])) {
+    $pools = array_keys($result['node']);
+  }
+
+  return $pools;
+}
+
+/**
  * Implements hook_node_update().
  */
-//function grunfes_node_update($node) {
-//  if ($node->type === 'show') {
-//    $new = hash('md5', serialize($node->field_matches));
-//    $original = hash('md5', serialize($node->original->field_matches));
-//
-//    if ($new !== $original) {
-//      $match_ids = array_column($node->field_matches['und'], 'target_id');
-//      $old_match_ids = array_column($node->original->field_matches['und'], 'target_id');
-//      $matches_to_add = array_diff($match_ids, $old_match_ids);
-//      $matches_to_remove = array_diff($old_match_ids, $match_ids);
-//
-//      if (!empty($matches_to_add)) {
-//        $query = new EntityFieldQuery();
-//        $query
-//          ->entityCondition('entity_type', 'node')
-//          ->entityCondition('bundle', 'pool')
-//          ->propertyCondition('status', NODE_PUBLISHED);
-//        $result = $query->execute();
-//      }
-//
-//      if (!empty($matches_to_remove)) {
-//        $query = new EntityFieldQuery();
-//        $query
-//          ->entityCondition('entity_type', 'node')
-//          ->entityCondition('bundle', 'pool')
-//          ->propertyCondition('status', NODE_PUBLISHED)
-//          ->fieldCondition('field_matches_to_pick', 'target_id', $matches_to_remove, 'IN');
-//        $result = $query->execute();
-//      }
-//    }
-//  }
-//}
+function grunfes_node_presave($node) {
+  if ($node->type === 'show' && !$node->is_new) {
+    $new = hash('md5', serialize($node->field_matches));
+    $original = hash('md5', serialize($node->original->field_matches));
+
+    if ($new !== $original) {
+      $match_ids = array_column($node->field_matches['und'], 'target_id');
+      $old_match_ids = array_column($node->original->field_matches['und'], 'target_id');
+      $matches_to_add = array_diff($match_ids, $old_match_ids);
+      $matches_to_remove = array_diff($old_match_ids, $match_ids);
+
+      if (!empty($old_match_ids)) {
+        $match_id = $old_match_ids[0];
+
+        $pool_ids = grunfes_get_pools_from_match($match_id);
+        $pools = entity_load('node', $pool_ids);
+
+        foreach ($pools as $pool) {
+          $pool_entity = entity_metadata_wrapper('node', $pool);
+          $pool_matches = $pool_entity->field_matches_to_pick->value();
+          $pool_match_ids = array_map(function ($obj) {
+            return $obj->nid;
+          }, $pool_matches);
+          $new_ids = array_merge($pool_match_ids, $matches_to_add);
+          $new_ids = array_diff($new_ids, $matches_to_remove);
+          $pool_entity->field_matches_to_pick->set(array_unique($new_ids));
+          $pool_entity->save();
+        }
+      }
+    }
+  }
+}
